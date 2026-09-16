@@ -185,7 +185,9 @@ function executeMove(piece, dest, isBonus) {
 
   placePiece(piece, dest.row, dest.col);
 
-  if (outcome === 'advantage' && !isBonus) {
+  // No bonus move if that capture already ended the game (e.g. it was the
+  // opponent's last Leader) - there's nothing left to take a bonus move against.
+  if (outcome === 'advantage' && !isBonus && !checkGameOver()) {
     enterBonusMode(piece);
     return;
   }
