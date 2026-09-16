@@ -32,6 +32,7 @@ let legalMoves = [];
 let swapTargets = [];
 let winner = null; // 'P1' | 'P2' | 'draw'
 let captured = { 1: [], 2: [] }; // pieces captured FROM this player (i.e. shown in their graveyard)
+let vsCPU = false; // when true, Player 2 is controlled by the bot in ai.js
 
 // ---------- Setup ----------
 
@@ -91,7 +92,7 @@ function resolveCombat(attackerType, defenderType) {
   return 'disadvantage';
 }
 
-function getLegalMoves(piece) {
+function getLegalMoves(piece, boardRef = board) {
   const stats = PIECE_STATS[piece.type][piece.role];
   const moves = [];
   for (const [dr, dc] of stats.dirs) {
@@ -99,7 +100,7 @@ function getLegalMoves(piece) {
       const r = piece.row + dr * step;
       const c = piece.col + dc * step;
       if (!inBounds(r, c)) break;
-      const occupant = board[r][c];
+      const occupant = boardRef[r][c];
       if (!occupant) {
         moves.push({ row: r, col: c, capture: false });
         continue; // both sliders and leapers may continue past empty tiles
@@ -117,13 +118,13 @@ function getLegalMoves(piece) {
   return moves;
 }
 
-function getSwapTargets(piece) {
+function getSwapTargets(piece, boardRef = board) {
   const targets = [];
   for (const [dr, dc] of OMNI) {
     const r = piece.row + dr;
     const c = piece.col + dc;
     if (!inBounds(r, c)) continue;
-    const occupant = board[r][c];
+    const occupant = boardRef[r][c];
     if (occupant && occupant.owner === piece.owner) targets.push(occupant);
   }
   return targets;
@@ -203,6 +204,7 @@ function enterBonusMode(piece) {
   legalMoves = getLegalMoves(piece);
   swapTargets = [];
   render();
+  maybeTriggerCPU();
 }
 
 function concludeTurn() {
@@ -219,6 +221,7 @@ function concludeTurn() {
   currentPlayer = currentPlayer === 1 ? 2 : 1;
   mode = 'idle';
   render();
+  maybeTriggerCPU();
 }
 
 // ---------- Input handling ----------
@@ -241,6 +244,7 @@ function clearSelection() {
 
 function onCellClick(r, c) {
   if (mode === 'over') return;
+  if (vsCPU && currentPlayer === 2) return; // CPU's turn, ignore human input
   const occupant = board[r][c];
 
   if (mode === 'bonus') {
@@ -275,6 +279,7 @@ function onCellClick(r, c) {
 
 function onSkipBonus() {
   if (mode !== 'bonus') return;
+  if (vsCPU && currentPlayer === 2) return; // CPU decides its own bonus moves
   concludeTurn();
 }
 
@@ -337,6 +342,10 @@ function renderBoard() {
   boardEl.appendChild(frag);
 }
 
+function playerLabel(owner) {
+  return vsCPU && owner === 2 ? 'CPU' : `Player ${owner}`;
+}
+
 function renderStatus() {
   p1LeadersEl.textContent = countLeaders(1);
   p2LeadersEl.textContent = countLeaders(2);
@@ -344,12 +353,12 @@ function renderStatus() {
   turnDotEl.className = `turn-dot p${currentPlayer}`;
 
   if (mode === 'over') {
-    statusText.textContent =
-      winner === 'draw' ? 'Draw!' : `${winner === 'P1' ? 'Player 1' : 'Player 2'} wins!`;
+    const winnerLabel = winner === 'draw' ? null : playerLabel(winner === 'P1' ? 1 : 2);
+    statusText.textContent = winner === 'draw' ? 'Draw!' : `${winnerLabel} wins!`;
     skipBonusBtn.classList.add('hidden');
     hintEl.textContent = 'Start a new game to play again.';
     overlayEl.classList.remove('hidden');
-    overlayTitle.textContent = winner === 'draw' ? "It's a Draw" : `${winner === 'P1' ? 'Player 1' : 'Player 2'} Wins!`;
+    overlayTitle.textContent = winner === 'draw' ? "It's a Draw" : `${winnerLabel} Wins!`;
     overlayText.textContent =
       winner === 'draw'
         ? 'Both sides lost their last Leader in mutual annihilation.'
@@ -359,16 +368,22 @@ function renderStatus() {
 
   overlayEl.classList.add('hidden');
 
+  const isCPUTurn = vsCPU && currentPlayer === 2;
+
   if (mode === 'bonus') {
-    statusText.textContent = `Player ${currentPlayer}: Bonus move available!`;
-    skipBonusBtn.classList.remove('hidden');
-    hintEl.textContent = 'Move again with the same piece, or skip to end your turn.';
+    statusText.textContent = `${playerLabel(currentPlayer)}: Bonus move available!`;
+    skipBonusBtn.classList.toggle('hidden', isCPUTurn);
+    hintEl.textContent = isCPUTurn
+      ? 'CPU is thinking…'
+      : 'Move again with the same piece, or skip to end your turn.';
     return;
   }
 
   skipBonusBtn.classList.add('hidden');
-  statusText.textContent = `Player ${currentPlayer}’s turn`;
-  if (mode === 'selected') {
+  statusText.textContent = `${playerLabel(currentPlayer)}’s turn`;
+  if (isCPUTurn) {
+    hintEl.textContent = 'CPU is thinking…';
+  } else if (mode === 'selected') {
     hintEl.textContent = 'Tap a highlighted tile to move, or a dashed tile to swap.';
   } else {
     hintEl.textContent = 'Tap a piece to select it.';
@@ -405,6 +420,13 @@ skipBonusBtn.addEventListener('click', onSkipBonus);
 
 document.getElementById('newGameBtn').addEventListener('click', newGame);
 document.getElementById('overlayNewGameBtn').addEventListener('click', newGame);
+
+const modeBtn = document.getElementById('modeBtn');
+modeBtn.addEventListener('click', () => {
+  vsCPU = !vsCPU;
+  modeBtn.textContent = vsCPU ? 'vs CPU' : '2 Player';
+  newGame();
+});
 
 const rulesDialog = document.getElementById('rulesDialog');
 document.getElementById('rulesBtn').addEventListener('click', () => rulesDialog.showModal());
