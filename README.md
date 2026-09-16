@@ -23,5 +23,7 @@ Full rules are available in-app via the "Rules" button, covering:
 - Bonus moves on an advantage capture
 - Mutual annihilation on a disadvantage capture
 - Tactical Swaps
+- Promotion: every piece moves at a reduced range until it reaches the
+  opponent's home rank, where it's promoted and gains its full range
 - Win condition: eliminate all 3 of your opponent's Leaders (or draw on
   simultaneous mutual elimination of both sides' last Leaders)

@@ -44,11 +44,6 @@ function isCPUControlled(owner) {
   return false;
 }
 
-// 'classic' = official ranges. 'promotion' = every unit's range is reduced by
-// 1; a unit that reaches the opponent's home rank is promoted once, which
-// restores its normal range (checkers-style). Toggled via the Rules button.
-let ruleVariant = 'classic';
-
 // ---------- Setup ----------
 
 function parseCode(code) {
@@ -111,11 +106,10 @@ function resolveCombat(attackerType, defenderType) {
   return 'disadvantage';
 }
 
-// Under the 'promotion' variant every unit's range is reduced by 1 until it
-// has been promoted, at which point it moves at its normal (classic) range.
+// Every unit's range is reduced by 1 until it has been promoted, at which
+// point it moves at its normal (full) range.
 function effectiveRange(piece) {
   const base = PIECE_STATS[piece.type][piece.role].range;
-  if (ruleVariant !== 'promotion') return base;
   return piece.promoted ? base : base - 1;
 }
 
@@ -176,9 +170,9 @@ function removeFromBoard(r, c) {
 }
 
 // A unit reaching the opponent's home rank is promoted once, restoring the
-// range lost to the 'promotion' variant's -1 penalty. No-op under 'classic'.
+// range lost to the -1 penalty.
 function maybePromote(piece) {
-  if (ruleVariant !== 'promotion' || piece.promoted) return;
+  if (piece.promoted) return;
   const farRank = piece.owner === 1 ? 0 : SIZE - 1;
   if (piece.row === farRank) piece.promoted = true;
 }
@@ -613,23 +607,6 @@ modeBtn.addEventListener('click', () => {
   modeBtn.textContent = m.label;
   newGame();
 });
-
-const variantBtn = document.getElementById('variantBtn');
-const variantStatusEl = document.getElementById('variantStatus');
-
-function renderVariantStatus() {
-  variantStatusEl.textContent = ruleVariant === 'promotion' ? '(active)' : '(inactive)';
-  variantStatusEl.classList.toggle('active', ruleVariant === 'promotion');
-}
-
-variantBtn.addEventListener('click', () => {
-  ruleVariant = ruleVariant === 'classic' ? 'promotion' : 'classic';
-  variantBtn.textContent = ruleVariant === 'promotion' ? 'Promotion Rules' : 'Classic Rules';
-  renderVariantStatus();
-  newGame();
-});
-
-renderVariantStatus();
 
 const rulesDialog = document.getElementById('rulesDialog');
 document.getElementById('rulesBtn').addEventListener('click', () => rulesDialog.showModal());

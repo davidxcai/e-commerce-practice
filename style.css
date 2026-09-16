@@ -445,14 +445,6 @@ html, body {
 .rules-dialog h3 { font-size: 15px; margin-bottom: 4px; }
 .rules-dialog p, .rules-dialog li { font-size: 14px; color: var(--text-dim); line-height: 1.4; }
 
-.variant-status {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-dim);
-}
-
-.variant-status.active { color: var(--leader-gold); }
-
 .rules-dialog table {
   width: 100%;
   border-collapse: collapse;
