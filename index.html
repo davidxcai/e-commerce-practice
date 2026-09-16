@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#12141c">
+<title>TRI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1 class="logo">TRI</h1>
+    <div class="topbar-actions">
+      <button id="rulesBtn" class="btn btn-ghost" type="button">Rules</button>
+      <button id="newGameBtn" class="btn btn-ghost" type="button">New Game</button>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <div class="turn-indicator" id="turnIndicator">
+      <span class="turn-dot p1"></span>
+      <span id="statusText">Player 1&rsquo;s turn</span>
+    </div>
+    <div class="leader-counts">
+      <span class="lc lc-p1"><span class="lc-dot p1"></span><span id="p1Leaders">3</span></span>
+      <span class="lc lc-p2"><span class="lc-dot p2"></span><span id="p2Leaders">3</span></span>
+    </div>
+  </div>
+
+  <main class="board-wrap">
+    <div id="board" class="board" role="grid" aria-label="Tri game board"></div>
+  </main>
+
+  <div class="action-bar">
+    <button id="skipBonusBtn" class="btn btn-primary hidden" type="button">Skip Bonus / End Turn</button>
+    <p id="hint" class="hint">Tap a piece to select it.</p>
+  </div>
+
+  <div class="graveyards">
+    <div class="graveyard" id="graveyardP1" aria-label="Player 1 captured pieces"></div>
+    <div class="graveyard" id="graveyardP2" aria-label="Player 2 captured pieces"></div>
+  </div>
+</div>
+
+<div id="overlay" class="overlay hidden">
+  <div class="overlay-card">
+    <h2 id="overlayTitle">Game Over</h2>
+    <p id="overlayText"></p>
+    <button id="overlayNewGameBtn" class="btn btn-primary" type="button">New Game</button>
+  </div>
+</div>
+
+<dialog id="rulesDialog" class="rules-dialog">
+  <h2>TRI &mdash; Official System Rules</h2>
+
+  <h3>1. Objective</h3>
+  <p>Eliminate all 3 of your opponent&rsquo;s Leaders. If a single move mutually destroys both players&rsquo; last remaining Leaders, the game is a draw.</p>
+
+  <h3>2. The Triangle of Advantage</h3>
+  <p>A beats B, B beats C, C beats A.</p>
+  <ul>
+    <li><strong>Advantage</strong> (e.g. A vs B): defender captured, attacker gets an optional bonus move with the same piece. No 3rd move. A disadvantage strike on the bonus move causes mutual annihilation.</li>
+    <li><strong>Neutral</strong> (same vs same): defender captured, turn ends.</li>
+    <li><strong>Disadvantage</strong> (e.g. A vs C): both pieces are eliminated, turn ends.</li>
+  </ul>
+
+  <h3>3. Pieces</h3>
+  <table>
+    <thead><tr><th>Piece</th><th>Range</th><th>Vector</th><th>Trait</th></tr></thead>
+    <tbody>
+      <tr><td>Squadron A</td><td>3</td><td>Orthogonal</td><td>Sliding</td></tr>
+      <tr><td>Leader A</td><td>4</td><td>Orthogonal</td><td>Leaping</td></tr>
+      <tr><td>Squadron B</td><td>3</td><td>Diagonal</td><td>Sliding</td></tr>
+      <tr><td>Leader B</td><td>4</td><td>Diagonal</td><td>Leaping</td></tr>
+      <tr><td>Squadron C</td><td>2</td><td>Omnidirectional</td><td>Sliding</td></tr>
+      <tr><td>Leader C</td><td>3</td><td>Omnidirectional</td><td>Leaping</td></tr>
+    </tbody>
+  </table>
+  <p>Sliding pieces are blocked by any piece in their path. Leaping pieces may jump over any piece (friendly or enemy) and land on an open tile or an enemy tile.</p>
+
+  <h3>4. Turn Structure</h3>
+  <p>Each turn, either move/engage one piece, or perform a Tactical Swap: exchange positions with an adjacent friendly piece (orthogonal or diagonal). A swap consumes the full turn.</p>
+
+  <button id="closeRulesBtn" class="btn btn-primary" type="button">Close</button>
+</dialog>
+
+<script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+:root {
+  --bg: #12141c;
+  --panel: #1a1d29;
+  --panel-border: #2b2f42;
+  --text: #e8e9f0;
+  --text-dim: #9296ab;
+  --p1: #4da3ff;
+  --p1-dark: #1f5c99;
+  --p2: #ff5d6c;
+  --p2-dark: #99242e;
+  --leader-gold: #ffcf4d;
+  --move-empty: #4ddb8b;
+  --move-capture: #ff5d6c;
+  --swap-color: #ffcf4d;
+  --light-sq: #232739;
+  --dark-sq: #1a1d29;
+  --selected: #4da3ff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overscroll-behavior: none;
+  height: 100%;
+}
+
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: env(safe-area-inset-top) 12px calc(env(safe-area-inset-bottom) + 12px);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 4px 8px;
+}
+
+.logo {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  background: linear-gradient(90deg, var(--p1), var(--p2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.topbar-actions { display: flex; gap: 8px; }
+
+.btn {
+  font-size: 14px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.btn:active { transform: scale(0.97); }
+
+.btn-ghost { background: transparent; }
+
+.btn-primary {
+  background: var(--p1);
+  border-color: var(--p1);
+  color: #08111d;
+  font-weight: 700;
+}
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.turn-indicator { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+
+.turn-dot, .lc-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.turn-dot.p1, .lc-dot.p1 { background: var(--p1); }
+.turn-dot.p2, .lc-dot.p2 { background: var(--p2); }
+
+.leader-counts { display: flex; gap: 12px; font-size: 14px; color: var(--text-dim); }
+.lc { display: flex; align-items: center; gap: 6px; }
+
+.board-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  grid-template-rows: repeat(9, 1fr);
+  width: min(94vw, 520px);
+  aspect-ratio: 1 / 1;
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  overflow: hidden;
+  user-select: none;
+}
+
+.cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cell.light { background: var(--light-sq); }
+.cell.dark { background: var(--dark-sq); }
+
+.cell.selected::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 2px solid var(--selected);
+  border-radius: 6px;
+  box-shadow: 0 0 8px var(--selected);
+  pointer-events: none;
+}
+
+.cell.move-empty::after {
+  content: "";
+  width: 26%;
+  height: 26%;
+  border-radius: 50%;
+  background: var(--move-empty);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.cell.move-capture::before {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border: 3px solid var(--move-capture);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.cell.swap-target::before {
+  content: "";
+  position: absolute;
+  inset: 6%;
+  border: 3px dashed var(--swap-color);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.piece {
+  width: 78%;
+  height: 78%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: clamp(12px, 3.4vw, 18px);
+  position: relative;
+  box-shadow: inset 0 -3px 6px rgba(0,0,0,0.25);
+}
+
+.piece.owner-1 { background: var(--p1); color: #08111d; border: 2px solid var(--p1-dark); }
+.piece.owner-2 { background: var(--p2); color: #260609; border: 2px solid var(--p2-dark); }
+
+.piece.leader { box-shadow: 0 0 0 3px var(--leader-gold), inset 0 -3px 6px rgba(0,0,0,0.25); }
+
+.piece.leader::after {
+  content: "\2605";
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  font-size: 11px;
+  color: var(--leader-gold);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+
+.action-bar {
+  text-align: center;
+  padding: 10px 0;
+  min-height: 56px;
+}
+
+.hint {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 8px 0 0;
+}
+
+.hidden { display: none !important; }
+
+.graveyards {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.graveyard {
+  flex: 1;
+  min-height: 30px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-content: flex-start;
+}
+
+.grave-piece {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.6;
+}
+
+.grave-piece.owner-1 { background: var(--p1); color: #08111d; }
+.grave-piece.owner-2 { background: var(--p2); color: #260609; }
+.grave-piece.leader { box-shadow: 0 0 0 2px var(--leader-gold); }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+
+.overlay-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  padding: 24px;
+  text-align: center;
+  max-width: 320px;
+  width: 100%;
+}
+
+.overlay-card h2 { margin-top: 0; }
+
+.rules-dialog {
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+  max-width: 560px;
+  width: min(92vw, 560px);
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.rules-dialog::backdrop { background: rgba(0,0,0,0.6); }
+
+.rules-dialog h2 { margin-top: 0; font-size: 18px; }
+.rules-dialog h3 { font-size: 15px; margin-bottom: 4px; }
+.rules-dialog p, .rules-dialog li { font-size: 14px; color: var(--text-dim); line-height: 1.4; }
+
+.rules-dialog table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.rules-dialog th, .rules-dialog td {
+  border: 1px solid var(--panel-border);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.rules-dialog #closeRulesBtn { margin-top: 12px; width: 100%; }
