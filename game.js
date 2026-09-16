@@ -77,6 +77,9 @@ function newGame() {
   swapTargets = [];
   winner = null;
   captured = { 1: [], 2: [] };
+  pieceLayerEl.innerHTML = '';
+  pieceEls.clear();
+  skipIndicatorEl.classList.remove('show');
   render();
 }
 
@@ -224,6 +227,18 @@ function concludeTurn() {
   maybeTriggerCPU();
 }
 
+// Skips are otherwise invisible turn endings (no piece moves) - flag them so
+// the other player can tell something happened instead of nothing.
+function skipBonusMove() {
+  showSkipIndicator(`${playerLabel(currentPlayer)} skipped the bonus move`);
+  concludeTurn();
+}
+
+function skipEntireTurn() {
+  showSkipIndicator(`${playerLabel(currentPlayer)} had no legal moves`);
+  concludeTurn();
+}
+
 // ---------- Input handling ----------
 
 function selectPiece(piece) {
@@ -280,12 +295,13 @@ function onCellClick(r, c) {
 function onSkipBonus() {
   if (mode !== 'bonus') return;
   if (vsCPU && currentPlayer === 2) return; // CPU decides its own bonus moves
-  concludeTurn();
+  skipBonusMove();
 }
 
 // ---------- Rendering ----------
 
 const boardEl = document.getElementById('board');
+const pieceLayerEl = document.getElementById('pieceLayer');
 const statusText = document.getElementById('statusText');
 const turnDotEl = document.querySelector('.turn-indicator .turn-dot');
 const p1LeadersEl = document.getElementById('p1Leaders');
@@ -297,6 +313,12 @@ const overlayTitle = document.getElementById('overlayTitle');
 const overlayText = document.getElementById('overlayText');
 const graveyardP1 = document.getElementById('graveyardP1');
 const graveyardP2 = document.getElementById('graveyardP2');
+const skipIndicatorEl = document.getElementById('skipIndicator');
+
+// Piece DOM elements persist across renders (keyed by piece id) so that
+// changing their left/top position triggers a CSS slide instead of a jump.
+const pieceEls = new Map();
+const CAPTURE_FADE_MS = 300;
 
 function pieceLabel(p) {
   return p.type;
@@ -304,6 +326,7 @@ function pieceLabel(p) {
 
 function render() {
   renderBoard();
+  renderPieces();
   renderStatus();
   renderGraveyards();
 }
@@ -328,18 +351,59 @@ function renderBoard() {
       const isSwapTarget = swapTargets.some((p) => p.row === r && p.col === c);
       if (isSwapTarget) cell.classList.add('swap-target');
 
-      const occupant = board[r][c];
-      if (occupant) {
-        const pieceEl = document.createElement('div');
-        pieceEl.className = `piece owner-${occupant.owner}${occupant.role === 'leader' ? ' leader' : ''}`;
-        pieceEl.textContent = pieceLabel(occupant);
-        cell.appendChild(pieceEl);
-      }
-
       frag.appendChild(cell);
     }
   }
   boardEl.appendChild(frag);
+}
+
+function createPieceToken(piece) {
+  const token = document.createElement('div');
+  token.className = 'piece-token';
+  token.style.left = `${(piece.col / SIZE) * 100}%`;
+  token.style.top = `${(piece.row / SIZE) * 100}%`;
+
+  const inner = document.createElement('div');
+  inner.className = `piece owner-${piece.owner}${piece.role === 'leader' ? ' leader' : ''}`;
+  inner.textContent = pieceLabel(piece);
+  token.appendChild(inner);
+
+  return token;
+}
+
+function renderPieces() {
+  const alive = new Set();
+
+  for (const piece of pieces) {
+    if (!piece.alive) continue;
+    alive.add(piece.id);
+
+    let token = pieceEls.get(piece.id);
+    if (!token) {
+      token = createPieceToken(piece);
+      pieceEls.set(piece.id, token);
+      pieceLayerEl.appendChild(token);
+    }
+    token.style.left = `${(piece.col / SIZE) * 100}%`;
+    token.style.top = `${(piece.row / SIZE) * 100}%`;
+  }
+
+  for (const [id, token] of pieceEls) {
+    if (alive.has(id)) continue;
+    token.classList.add('captured');
+    pieceEls.delete(id);
+    setTimeout(() => token.remove(), CAPTURE_FADE_MS);
+  }
+}
+
+function showSkipIndicator(text) {
+  skipIndicatorEl.textContent = text;
+  // Restart the CSS transition even if a previous message is still fading.
+  skipIndicatorEl.classList.remove('show');
+  void skipIndicatorEl.offsetWidth;
+  skipIndicatorEl.classList.add('show');
+  clearTimeout(showSkipIndicator.timeoutId);
+  showSkipIndicator.timeoutId = setTimeout(() => skipIndicatorEl.classList.remove('show'), 1800);
 }
 
 function playerLabel(owner) {

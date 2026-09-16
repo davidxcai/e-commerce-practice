@@ -184,13 +184,13 @@ function runCPUTurnStep() {
   if (mode === 'bonus') {
     const move = pickBestBonusMove(2);
     if (move) executeMove(selected, move, true);
-    else concludeTurn(); // skip the bonus; bypasses onSkipBonus's human-input guard
+    else skipBonusMove(); // bypasses onSkipBonus's human-input guard
     return;
   }
 
   const action = pickBestAction(2);
   if (!action) {
-    concludeTurn();
+    skipEntireTurn();
     return;
   }
   if (action.type === 'move') {

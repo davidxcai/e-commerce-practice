@@ -29,8 +29,13 @@
     </div>
   </div>
 
+  <p id="skipIndicator" class="skip-indicator"></p>
+
   <main class="board-wrap">
-    <div id="board" class="board" role="grid" aria-label="Tri game board"></div>
+    <div class="board-stage">
+      <div id="board" class="board" role="grid" aria-label="Tri game board"></div>
+      <div id="pieceLayer" class="piece-layer" aria-hidden="true"></div>
+    </div>
   </main>
 
   <div class="action-bar">
