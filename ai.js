@@ -34,6 +34,7 @@ function simApplyMove(snapshot, pieceId, dest) {
     piece.row = dest.row;
     piece.col = dest.col;
     snapshot.board[dest.row][dest.col] = piece;
+    maybePromote(piece);
     return { bonus: false };
   }
 
@@ -49,6 +50,7 @@ function simApplyMove(snapshot, pieceId, dest) {
   piece.row = dest.row;
   piece.col = dest.col;
   snapshot.board[dest.row][dest.col] = piece;
+  maybePromote(piece);
   return { bonus: outcome === 'advantage' };
 }
 
@@ -62,6 +64,8 @@ function simApplySwap(snapshot, idA, idB) {
   snapshot.board[br][bc] = a;
   a.row = br;
   a.col = bc;
+  maybePromote(a);
+  maybePromote(b);
 }
 
 function evaluateSnapshot(snapshot, forOwner) {
@@ -179,16 +183,17 @@ function pickBestBonusMove(owner) {
 }
 
 function runCPUTurnStep() {
-  if (!vsCPU || currentPlayer !== 2 || mode === 'over') return;
+  if (mode === 'over' || !isCPUControlled(currentPlayer)) return;
+  const owner = currentPlayer;
 
   if (mode === 'bonus') {
-    const move = pickBestBonusMove(2);
+    const move = pickBestBonusMove(owner);
     if (move) executeMove(selected, move, true);
     else skipBonusMove(); // bypasses onSkipBonus's human-input guard
     return;
   }
 
-  const action = pickBestAction(2);
+  const action = pickBestAction(owner);
   if (!action) {
     skipEntireTurn();
     return;
@@ -200,7 +205,6 @@ function runCPUTurnStep() {
   }
 }
 
-function maybeTriggerCPU() {
-  if (!vsCPU || currentPlayer !== 2 || mode === 'over') return;
-  setTimeout(runCPUTurnStep, CPU_MOVE_DELAY_MS);
-}
+// maybeTriggerCPU lives in game.js now - it dispatches to this file's
+// runCPUTurnStep (Easy) or ai-hard.js's runHardCPUTurnStep (Hard) depending
+// on the selected difficulty.

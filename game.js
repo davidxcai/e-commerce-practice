@@ -26,13 +26,28 @@ const LAYOUT_P1_BACK = ['C', 'B_L', 'C', 'A', 'C_L', 'A', 'B', 'A_L', 'B'];   //
 let pieces = [];
 let board = [];
 let currentPlayer = 1;
-let mode = 'idle'; // 'idle' | 'selected' | 'bonus' | 'over'
+let mode = 'idle'; // 'idle' | 'selected' | 'bonus' | 'animating' | 'over'
 let selected = null;
 let legalMoves = [];
 let swapTargets = [];
 let winner = null; // 'P1' | 'P2' | 'draw'
 let captured = { 1: [], 2: [] }; // pieces captured FROM this player (i.e. shown in their graveyard)
-let vsCPU = false; // when true, Player 2 is controlled by the bot in ai.js
+// 'pvp' = both players human | 'vsCPU' = Player 2 is a bot | 'spectator' = both
+// players are bots and only advance one action at a time via the Next button.
+let gameMode = 'pvp';
+let cpuDifficulty = 'easy'; // 'easy' (ai.js, greedy) | 'hard' (ai-hard.js, lookahead)
+let turnCount = 1;
+
+function isCPUControlled(owner) {
+  if (gameMode === 'spectator') return true;
+  if (gameMode === 'vsCPU') return owner === 2;
+  return false;
+}
+
+// 'classic' = official ranges. 'promotion' = every unit's range is reduced by
+// 1; a unit that reaches the opponent's home rank is promoted once, which
+// restores its normal range (checkers-style). Toggled via the Rules button.
+let ruleVariant = 'classic';
 
 // ---------- Setup ----------
 
@@ -53,7 +68,7 @@ function buildInitialPieces() {
   for (const { row, owner, layout } of rows) {
     layout.forEach((code, col) => {
       const { type, role } = parseCode(code);
-      list.push({ id: id++, owner, type, role, row, col, alive: true });
+      list.push({ id: id++, owner, type, role, row, col, alive: true, promoted: false });
     });
   }
   return list;
@@ -77,6 +92,7 @@ function newGame() {
   swapTargets = [];
   winner = null;
   captured = { 1: [], 2: [] };
+  turnCount = 1;
   pieceLayerEl.innerHTML = '';
   pieceEls.clear();
   skipIndicatorEl.classList.remove('show');
@@ -95,11 +111,20 @@ function resolveCombat(attackerType, defenderType) {
   return 'disadvantage';
 }
 
+// Under the 'promotion' variant every unit's range is reduced by 1 until it
+// has been promoted, at which point it moves at its normal (classic) range.
+function effectiveRange(piece) {
+  const base = PIECE_STATS[piece.type][piece.role].range;
+  if (ruleVariant !== 'promotion') return base;
+  return piece.promoted ? base : base - 1;
+}
+
 function getLegalMoves(piece, boardRef = board) {
   const stats = PIECE_STATS[piece.type][piece.role];
+  const range = effectiveRange(piece);
   const moves = [];
   for (const [dr, dc] of stats.dirs) {
-    for (let step = 1; step <= stats.range; step++) {
+    for (let step = 1; step <= range; step++) {
       const r = piece.row + dr * step;
       const c = piece.col + dc * step;
       if (!inBounds(r, c)) break;
@@ -150,10 +175,19 @@ function removeFromBoard(r, c) {
   board[r][c] = null;
 }
 
+// A unit reaching the opponent's home rank is promoted once, restoring the
+// range lost to the 'promotion' variant's -1 penalty. No-op under 'classic'.
+function maybePromote(piece) {
+  if (ruleVariant !== 'promotion' || piece.promoted) return;
+  const farRank = piece.owner === 1 ? 0 : SIZE - 1;
+  if (piece.row === farRank) piece.promoted = true;
+}
+
 function placePiece(piece, r, c) {
   piece.row = r;
   piece.col = c;
   board[r][c] = piece;
+  maybePromote(piece);
 }
 
 function killPiece(piece) {
@@ -163,6 +197,10 @@ function killPiece(piece) {
 }
 
 // ---------- Turn actions ----------
+
+// Matches the piece-token position transition in style.css, so a losing
+// attacker finishes sliding into the defender's tile before it fades out.
+const MOVE_ANIM_MS = 500;
 
 function executeMove(piece, dest, isBonus) {
   const defender = board[dest.row][dest.col];
@@ -178,8 +216,20 @@ function executeMove(piece, dest, isBonus) {
   killPiece(defender);
 
   if (outcome === 'disadvantage') {
-    killPiece(piece);
-    concludeTurn();
+    // Move the attacker onto the defender's tile visually (without placing it
+    // on the board) so it's clear the two pieces clashed there, instead of
+    // both just vanishing in place. It's killed once the slide finishes.
+    piece.row = dest.row;
+    piece.col = dest.col;
+    selected = null;
+    legalMoves = [];
+    swapTargets = [];
+    mode = 'animating';
+    render();
+    setTimeout(() => {
+      killPiece(piece);
+      concludeTurn();
+    }, MOVE_ANIM_MS);
     return;
   }
 
@@ -223,10 +273,28 @@ function concludeTurn() {
     render();
     return;
   }
-  currentPlayer = currentPlayer === 1 ? 2 : 1;
+  const nextPlayer = currentPlayer === 1 ? 2 : 1;
+  if (nextPlayer === 1) turnCount++; // a full round (both players moved) just completed
+  currentPlayer = nextPlayer;
   mode = 'idle';
   render();
   maybeTriggerCPU();
+}
+
+// Dispatches to the Easy bot (ai.js) or the Hard bot (ai-hard.js) depending
+// on the selected difficulty.
+function stepCPU() {
+  if (mode === 'over' || mode === 'animating' || !isCPUControlled(currentPlayer)) return;
+  if (cpuDifficulty === 'hard') runHardCPUTurnStep();
+  else runCPUTurnStep();
+}
+
+function maybeTriggerCPU() {
+  if (mode === 'over' || !isCPUControlled(currentPlayer)) return;
+  // Spectator mode only advances when the user taps the Next button.
+  if (gameMode === 'spectator') return;
+  const delay = cpuDifficulty === 'hard' ? HARD_CPU_MOVE_DELAY_MS : CPU_MOVE_DELAY_MS;
+  setTimeout(stepCPU, delay);
 }
 
 // Skips are otherwise invisible turn endings (no piece moves) - flag them so
@@ -260,8 +328,8 @@ function clearSelection() {
 }
 
 function onCellClick(r, c) {
-  if (mode === 'over') return;
-  if (vsCPU && currentPlayer === 2) return; // CPU's turn, ignore human input
+  if (mode === 'over' || mode === 'animating') return;
+  if (isCPUControlled(currentPlayer)) return; // CPU's turn, ignore human input
   const occupant = board[r][c];
 
   if (mode === 'bonus') {
@@ -296,7 +364,7 @@ function onCellClick(r, c) {
 
 function onSkipBonus() {
   if (mode !== 'bonus') return;
-  if (vsCPU && currentPlayer === 2) return; // CPU decides its own bonus moves
+  if (isCPUControlled(currentPlayer)) return; // CPU decides its own bonus moves
   skipBonusMove();
 }
 
@@ -304,11 +372,17 @@ function onSkipBonus() {
 
 const boardEl = document.getElementById('board');
 const pieceLayerEl = document.getElementById('pieceLayer');
-const statusText = document.getElementById('statusText');
-const turnDotEl = document.querySelector('.turn-indicator .turn-dot');
-const p1LeadersEl = document.getElementById('p1Leaders');
-const p2LeadersEl = document.getElementById('p2Leaders');
+const statusP1El = document.getElementById('statusP1');
+const statusP2El = document.getElementById('statusP2');
+const p1LabelEl = document.getElementById('p1Label');
+const p2LabelEl = document.getElementById('p2Label');
+const p1LeaderIconsEl = document.getElementById('p1LeaderIcons');
+const p2LeaderIconsEl = document.getElementById('p2LeaderIcons');
+const turnNumberEl = document.getElementById('turnNumber');
+const turnArrowP1El = document.getElementById('turnArrowP1');
+const turnArrowP2El = document.getElementById('turnArrowP2');
 const skipBonusBtn = document.getElementById('skipBonusBtn');
+const nextBtn = document.getElementById('nextBtn');
 const hintEl = document.getElementById('hint');
 const overlayEl = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlayTitle');
@@ -322,8 +396,10 @@ const skipIndicatorEl = document.getElementById('skipIndicator');
 const pieceEls = new Map();
 const CAPTURE_FADE_MS = 300;
 
-function pieceLabel(p) {
-  return p.type;
+const SHAPE_BY_TYPE = { A: 'square', B: 'diamond', C: 'circle' };
+
+function pieceShape(p) {
+  return SHAPE_BY_TYPE[p.type];
 }
 
 function render() {
@@ -366,8 +442,12 @@ function createPieceToken(piece) {
   token.style.top = `${(piece.row / SIZE) * 100}%`;
 
   const inner = document.createElement('div');
-  inner.className = `piece owner-${piece.owner}${piece.role === 'leader' ? ' leader' : ''}`;
-  inner.textContent = pieceLabel(piece);
+  inner.className = `piece${piece.role === 'leader' ? ' leader' : ''}`;
+
+  const shape = document.createElement('div');
+  shape.className = `piece-shape owner-${piece.owner} shape-${pieceShape(piece)}${piece.role === 'leader' ? ' leader' : ''}`;
+  inner.appendChild(shape);
+
   token.appendChild(inner);
 
   return token;
@@ -388,6 +468,7 @@ function renderPieces() {
     }
     token.style.left = `${(piece.col / SIZE) * 100}%`;
     token.style.top = `${(piece.row / SIZE) * 100}%`;
+    token.querySelector('.piece').classList.toggle('promoted', piece.promoted);
   }
 
   for (const [id, token] of pieceEls) {
@@ -409,19 +490,35 @@ function showSkipIndicator(text) {
 }
 
 function playerLabel(owner) {
-  return vsCPU && owner === 2 ? 'CPU' : `Player ${owner}`;
+  if (!isCPUControlled(owner)) return `Player ${owner}`;
+  return cpuDifficulty === 'hard' ? 'CPU (Hard)' : 'CPU';
+}
+
+function renderLeaderIcons(container, owner) {
+  container.innerHTML = '';
+  for (const type of ['A', 'B', 'C']) {
+    const leader = pieces.find((p) => p.owner === owner && p.type === type && p.role === 'leader');
+    const icon = document.createElement('span');
+    icon.className = `status-shape owner-${owner} shape-${SHAPE_BY_TYPE[type]}${leader.alive ? '' : ' dead'}`;
+    container.appendChild(icon);
+  }
 }
 
 function renderStatus() {
-  p1LeadersEl.textContent = countLeaders(1);
-  p2LeadersEl.textContent = countLeaders(2);
-
-  turnDotEl.className = `turn-dot p${currentPlayer}`;
+  p1LabelEl.textContent = playerLabel(1);
+  p2LabelEl.textContent = playerLabel(2);
+  renderLeaderIcons(p1LeaderIconsEl, 1);
+  renderLeaderIcons(p2LeaderIconsEl, 2);
+  turnNumberEl.textContent = turnCount;
 
   if (mode === 'over') {
     const winnerLabel = winner === 'draw' ? null : playerLabel(winner === 'P1' ? 1 : 2);
-    statusText.textContent = winner === 'draw' ? 'Draw!' : `${winnerLabel} wins!`;
+    statusP1El.classList.remove('active');
+    statusP2El.classList.remove('active');
+    turnArrowP1El.classList.remove('active');
+    turnArrowP2El.classList.remove('active');
     skipBonusBtn.classList.add('hidden');
+    nextBtn.classList.add('hidden');
     hintEl.textContent = 'Start a new game to play again.';
     overlayEl.classList.remove('hidden');
     overlayTitle.textContent = winner === 'draw' ? "It's a Draw" : `${winnerLabel} Wins!`;
@@ -433,21 +530,30 @@ function renderStatus() {
   }
 
   overlayEl.classList.add('hidden');
+  statusP1El.classList.toggle('active', currentPlayer === 1);
+  statusP2El.classList.toggle('active', currentPlayer === 2);
+  turnArrowP1El.classList.toggle('active', currentPlayer === 1);
+  turnArrowP2El.classList.toggle('active', currentPlayer === 2);
 
-  const isCPUTurn = vsCPU && currentPlayer === 2;
+  const isCPUTurn = isCPUControlled(currentPlayer);
+  const isSpectator = gameMode === 'spectator';
 
   if (mode === 'bonus') {
-    statusText.textContent = `${playerLabel(currentPlayer)}: Bonus move available!`;
     skipBonusBtn.classList.toggle('hidden', isCPUTurn);
-    hintEl.textContent = isCPUTurn
+    nextBtn.classList.toggle('hidden', !isSpectator);
+    hintEl.textContent = isSpectator
+      ? 'Tap Next to resolve the bonus move.'
+      : isCPUTurn
       ? 'CPU is thinking…'
       : 'Move again with the same piece, or skip to end your turn.';
     return;
   }
 
   skipBonusBtn.classList.add('hidden');
-  statusText.textContent = `${playerLabel(currentPlayer)}’s turn`;
-  if (isCPUTurn) {
+  nextBtn.classList.toggle('hidden', !isSpectator);
+  if (isSpectator) {
+    hintEl.textContent = 'Tap Next to advance the CPU match.';
+  } else if (isCPUTurn) {
     hintEl.textContent = 'CPU is thinking…';
   } else if (mode === 'selected') {
     hintEl.textContent = 'Tap a highlighted tile to move, or a dashed tile to swap.';
@@ -469,8 +575,7 @@ function renderGraveyards() {
 
 function makeGravePiece(p) {
   const el = document.createElement('div');
-  el.className = `grave-piece owner-${p.owner}${p.role === 'leader' ? ' leader' : ''}`;
-  el.textContent = pieceLabel(p);
+  el.className = `grave-piece owner-${p.owner} shape-${pieceShape(p)}${p.role === 'leader' ? ' leader' : ''}`;
   return el;
 }
 
@@ -483,16 +588,48 @@ boardEl.addEventListener('click', (e) => {
 });
 
 skipBonusBtn.addEventListener('click', onSkipBonus);
+nextBtn.addEventListener('click', () => {
+  if (gameMode !== 'spectator' || mode === 'over') return;
+  stepCPU();
+});
 
 document.getElementById('newGameBtn').addEventListener('click', newGame);
 document.getElementById('overlayNewGameBtn').addEventListener('click', newGame);
 
+const MODE_CYCLE = [
+  { mode: 'pvp', difficulty: 'easy', label: '2 Player' },
+  { mode: 'vsCPU', difficulty: 'easy', label: 'vs CPU (Easy)' },
+  { mode: 'vsCPU', difficulty: 'hard', label: 'vs CPU (Hard)' },
+  { mode: 'spectator', difficulty: 'hard', label: 'CPU vs CPU' },
+];
+let modeIndex = 0;
+
 const modeBtn = document.getElementById('modeBtn');
 modeBtn.addEventListener('click', () => {
-  vsCPU = !vsCPU;
-  modeBtn.textContent = vsCPU ? 'vs CPU' : '2 Player';
+  modeIndex = (modeIndex + 1) % MODE_CYCLE.length;
+  const m = MODE_CYCLE[modeIndex];
+  gameMode = m.mode;
+  cpuDifficulty = m.difficulty;
+  modeBtn.textContent = m.label;
   newGame();
 });
+
+const variantBtn = document.getElementById('variantBtn');
+const variantStatusEl = document.getElementById('variantStatus');
+
+function renderVariantStatus() {
+  variantStatusEl.textContent = ruleVariant === 'promotion' ? '(active)' : '(inactive)';
+  variantStatusEl.classList.toggle('active', ruleVariant === 'promotion');
+}
+
+variantBtn.addEventListener('click', () => {
+  ruleVariant = ruleVariant === 'classic' ? 'promotion' : 'classic';
+  variantBtn.textContent = ruleVariant === 'promotion' ? 'Promotion Rules' : 'Classic Rules';
+  renderVariantStatus();
+  newGame();
+});
+
+renderVariantStatus();
 
 const rulesDialog = document.getElementById('rulesDialog');
 document.getElementById('rulesBtn').addEventListener('click', () => rulesDialog.showModal());

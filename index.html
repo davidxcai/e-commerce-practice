@@ -13,19 +13,28 @@
     <h1 class="logo">TRI</h1>
     <div class="topbar-actions">
       <button id="modeBtn" class="btn btn-ghost" type="button">2 Player</button>
+      <button id="variantBtn" class="btn btn-ghost" type="button">Classic Rules</button>
       <button id="rulesBtn" class="btn btn-ghost" type="button">Rules</button>
       <button id="newGameBtn" class="btn btn-ghost" type="button">New Game</button>
     </div>
   </header>
 
   <div class="status-bar">
-    <div class="turn-indicator" id="turnIndicator">
-      <span class="turn-dot p1"></span>
-      <span id="statusText">Player 1&rsquo;s turn</span>
+    <div class="status-player status-player-p1" id="statusP1">
+      <span class="status-player-label" id="p1Label">Player 1</span>
+      <div class="status-leaders" id="p1LeaderIcons"></div>
     </div>
-    <div class="leader-counts">
-      <span class="lc lc-p1"><span class="lc-dot p1"></span><span id="p1Leaders">3</span></span>
-      <span class="lc lc-p2"><span class="lc-dot p2"></span><span id="p2Leaders">3</span></span>
+    <div class="status-turn">
+      <span class="status-turn-label">Turn</span>
+      <div class="status-turn-count">
+        <span class="turn-arrow" id="turnArrowP1" aria-hidden="true">&#9664;</span>
+        <span class="status-turn-number" id="turnNumber">1</span>
+        <span class="turn-arrow" id="turnArrowP2" aria-hidden="true">&#9654;</span>
+      </div>
+    </div>
+    <div class="status-player status-player-p2" id="statusP2">
+      <span class="status-player-label" id="p2Label">Player 2</span>
+      <div class="status-leaders" id="p2LeaderIcons"></div>
     </div>
   </div>
 
@@ -40,6 +49,7 @@
 
   <div class="action-bar">
     <button id="skipBonusBtn" class="btn btn-primary hidden" type="button">Skip Bonus / End Turn</button>
+    <button id="nextBtn" class="btn btn-primary hidden" type="button">Next &#9654;</button>
     <p id="hint" class="hint">Tap a piece to select it.</p>
   </div>
 
@@ -64,23 +74,23 @@
   <p>Eliminate all 3 of your opponent&rsquo;s Leaders. If a single move mutually destroys both players&rsquo; last remaining Leaders, the game is a draw.</p>
 
   <h3>2. The Triangle of Advantage</h3>
-  <p>A beats B, B beats C, C beats A.</p>
+  <p>Square beats Diamond, Diamond beats Circle, Circle beats Square.</p>
   <ul>
-    <li><strong>Advantage</strong> (e.g. A vs B): defender captured, attacker gets an optional bonus move with the same piece. No 3rd move. A disadvantage strike on the bonus move causes mutual annihilation.</li>
+    <li><strong>Advantage</strong> (e.g. Square vs Diamond): defender captured, attacker gets an optional bonus move with the same piece. No 3rd move. A disadvantage strike on the bonus move causes mutual annihilation.</li>
     <li><strong>Neutral</strong> (same vs same): defender captured, turn ends.</li>
-    <li><strong>Disadvantage</strong> (e.g. A vs C): both pieces are eliminated, turn ends.</li>
+    <li><strong>Disadvantage</strong> (e.g. Square vs Circle): both pieces are eliminated, turn ends.</li>
   </ul>
 
   <h3>3. Pieces</h3>
   <table>
     <thead><tr><th>Piece</th><th>Range</th><th>Vector</th><th>Trait</th></tr></thead>
     <tbody>
-      <tr><td>Squadron A</td><td>3</td><td>Orthogonal</td><td>Sliding</td></tr>
-      <tr><td>Leader A</td><td>4</td><td>Orthogonal</td><td>Leaping</td></tr>
-      <tr><td>Squadron B</td><td>3</td><td>Diagonal</td><td>Sliding</td></tr>
-      <tr><td>Leader B</td><td>4</td><td>Diagonal</td><td>Leaping</td></tr>
-      <tr><td>Squadron C</td><td>2</td><td>Omnidirectional</td><td>Sliding</td></tr>
-      <tr><td>Leader C</td><td>3</td><td>Omnidirectional</td><td>Leaping</td></tr>
+      <tr><td>Square Squadron</td><td>3</td><td>Orthogonal</td><td>Sliding</td></tr>
+      <tr><td>Square Leader</td><td>4</td><td>Orthogonal</td><td>Leaping</td></tr>
+      <tr><td>Diamond Squadron</td><td>3</td><td>Diagonal</td><td>Sliding</td></tr>
+      <tr><td>Diamond Leader</td><td>4</td><td>Diagonal</td><td>Leaping</td></tr>
+      <tr><td>Circle Squadron</td><td>2</td><td>Omnidirectional</td><td>Sliding</td></tr>
+      <tr><td>Circle Leader</td><td>3</td><td>Omnidirectional</td><td>Leaping</td></tr>
     </tbody>
   </table>
   <p>Sliding pieces are blocked by any piece in their path. Leaping pieces may jump over any piece (friendly or enemy) and land on an open tile or an enemy tile.</p>
@@ -88,10 +98,14 @@
   <h3>4. Turn Structure</h3>
   <p>Each turn, either move/engage one piece, or perform a Tactical Swap: exchange positions with an adjacent friendly piece (orthogonal or diagonal). A swap consumes the full turn.</p>
 
+  <h3>5. Promotion Variant <span id="variantStatus" class="variant-status"></span></h3>
+  <p>An optional variant, toggled with the &ldquo;Classic Rules / Promotion Rules&rdquo; button in the top bar (applies from the next New Game). Every piece's range from the table above is reduced by 1. The first time a piece reaches the opponent's home rank (the far edge of the board), it is promoted, permanently restoring its normal range - shown with a <strong>+1</strong> on the piece.</p>
+
   <button id="closeRulesBtn" class="btn btn-primary" type="button">Close</button>
 </dialog>
 
 <script src="game.js"></script>
 <script src="ai.js"></script>
+<script src="ai-hard.js"></script>
 </body>
 </html>
