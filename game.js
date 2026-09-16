@@ -276,11 +276,25 @@ function concludeTurn() {
 }
 
 // Dispatches to the Easy bot (ai.js) or the Hard bot (ai-hard.js) depending
-// on the selected difficulty.
+// on the selected difficulty. A thrown error here (e.g. from the Hard bot's
+// search) would otherwise leave "CPU is thinking…" on screen forever, since
+// nothing else re-triggers the turn - so fall back to the simpler Easy bot,
+// and failing that, just skip, rather than leave the game stuck.
 function stepCPU() {
   if (mode === 'over' || mode === 'animating' || !isCPUControlled(currentPlayer)) return;
-  if (cpuDifficulty === 'hard') runHardCPUTurnStep();
-  else runCPUTurnStep();
+  try {
+    if (cpuDifficulty === 'hard') runHardCPUTurnStep();
+    else runCPUTurnStep();
+  } catch (err) {
+    console.error('CPU turn failed, retrying with the Easy bot:', err);
+    try {
+      runCPUTurnStep();
+    } catch (err2) {
+      console.error('CPU turn failed again, skipping turn:', err2);
+      if (mode === 'bonus') skipBonusMove();
+      else skipEntireTurn();
+    }
+  }
 }
 
 function maybeTriggerCPU() {

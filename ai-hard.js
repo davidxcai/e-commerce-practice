@@ -72,7 +72,9 @@ function withPreferredFirst(actions, preferred) {
 
 function checkAbort(state) {
   state.nodes++;
-  if (!state.aborted && (state.nodes & 511) === 0 && Date.now() > state.deadline) {
+  // Checked every 63 nodes rather than less often so a slow device can't
+  // blow through the time budget by much before this notices.
+  if (!state.aborted && (state.nodes & 63) === 0 && Date.now() > state.deadline) {
     state.aborted = true;
   }
   return state.aborted;
