@@ -41,7 +41,13 @@ let turnCount = 1;
 // repeated position (two deterministic CPUs shuffling the same piece forever)
 // ends the game instead of looping indefinitely. Keyed by snapshotPositionKey().
 let positionHistory = new Map();
-let drawReason = null; // 'repetition' | null (null covers the mutual-annihilation case)
+let drawReason = null; // 'repetition' | 'no-progress' | null (null covers the mutual-annihilation case)
+// Full rounds (turnCount) since either side's last capture - mirrors chess's
+// fifty-move rule so a game that isn't looping but also isn't going anywhere
+// (nobody being captured) still ends in a bounded number of turns instead of
+// grinding on for hundreds of them.
+let noCaptureRounds = 0;
+const NO_PROGRESS_ROUND_LIMIT = 50;
 
 function isCPUControlled(owner) {
   if (gameMode === 'spectator') return true;
@@ -95,6 +101,7 @@ function newGame() {
   turnCount = 1;
   positionHistory = new Map();
   drawReason = null;
+  noCaptureRounds = 0;
   pieceLayerEl.innerHTML = '';
   pieceEls.clear();
   skipIndicatorEl.classList.remove('show');
@@ -226,6 +233,7 @@ function killPiece(piece) {
   piece.alive = false;
   removeFromBoard(piece.row, piece.col);
   captured[piece.owner].push(piece);
+  noCaptureRounds = 0;
 }
 
 // ---------- Turn actions ----------
@@ -306,9 +314,23 @@ function concludeTurn() {
     return;
   }
   const nextPlayer = currentPlayer === 1 ? 2 : 1;
-  if (nextPlayer === 1) turnCount++; // a full round (both players moved) just completed
+  if (nextPlayer === 1) {
+    turnCount++; // a full round (both players moved) just completed
+    noCaptureRounds++;
+  }
   currentPlayer = nextPlayer;
   mode = 'idle';
+
+  // Fifty-move-rule equivalent: a long stretch with no capture means the game
+  // isn't going anywhere, even if it isn't strictly looping - end it instead
+  // of grinding on for hundreds more turns.
+  if (noCaptureRounds >= NO_PROGRESS_ROUND_LIMIT) {
+    mode = 'over';
+    winner = 'draw';
+    drawReason = 'no-progress';
+    render();
+    return;
+  }
 
   // If this exact position (same squares, same side to move) has now shown up
   // a third time, nobody's going to break the cycle on their own - call it a
@@ -587,6 +609,8 @@ function renderStatus() {
       winner === 'draw'
         ? drawReason === 'repetition'
           ? 'The same position occurred three times - draw by repetition.'
+          : drawReason === 'no-progress'
+          ? `${NO_PROGRESS_ROUND_LIMIT} turns passed with no capture - draw by the no-progress rule.`
           : 'Both sides lost their last Leader in mutual annihilation.'
         : 'All opposing Leaders have been eliminated.';
     return;
