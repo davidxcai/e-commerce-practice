@@ -37,6 +37,11 @@ let captured = { 1: [], 2: [] }; // pieces captured FROM this player (i.e. shown
 let gameMode = 'pvp';
 let cpuDifficulty = 'easy'; // 'easy' (ai.js, greedy) | 'hard' (ai-hard.js, lookahead)
 let turnCount = 1;
+// Tracks how many times each board position (+ whose turn) has occurred, so a
+// repeated position (two deterministic CPUs shuffling the same piece forever)
+// ends the game instead of looping indefinitely. Keyed by snapshotPositionKey().
+let positionHistory = new Map();
+let drawReason = null; // 'repetition' | null (null covers the mutual-annihilation case)
 
 function isCPUControlled(owner) {
   if (gameMode === 'spectator') return true;
@@ -88,6 +93,8 @@ function newGame() {
   winner = null;
   captured = { 1: [], 2: [] };
   turnCount = 1;
+  positionHistory = new Map();
+  drawReason = null;
   pieceLayerEl.innerHTML = '';
   pieceEls.clear();
   skipIndicatorEl.classList.remove('show');
@@ -167,6 +174,23 @@ function checkGameOver() {
 
 function removeFromBoard(r, c) {
   board[r][c] = null;
+}
+
+// Encodes a board state as a string: id/row/col/promoted for every living
+// piece (piece identity, type, role and owner never change, so the id alone
+// is enough) plus whose turn it is. Two calls produce the same key iff the
+// resulting position is identical - used to detect repeated positions.
+function snapshotPositionKey(pieceList, playerToMove) {
+  const parts = [playerToMove];
+  for (const p of pieceList) {
+    if (!p.alive) continue;
+    parts.push(`${p.id}:${p.row},${p.col},${p.promoted ? 1 : 0}`);
+  }
+  return parts.join('|');
+}
+
+function positionKey() {
+  return snapshotPositionKey(pieces, currentPlayer);
 }
 
 // A unit reaching the opponent's home rank is promoted once, restoring the
@@ -271,6 +295,21 @@ function concludeTurn() {
   if (nextPlayer === 1) turnCount++; // a full round (both players moved) just completed
   currentPlayer = nextPlayer;
   mode = 'idle';
+
+  // If this exact position (same squares, same side to move) has now shown up
+  // a third time, nobody's going to break the cycle on their own - call it a
+  // draw instead of leaving the game to loop forever.
+  const key = positionKey();
+  const seenCount = (positionHistory.get(key) || 0) + 1;
+  positionHistory.set(key, seenCount);
+  if (seenCount >= 3) {
+    mode = 'over';
+    winner = 'draw';
+    drawReason = 'repetition';
+    render();
+    return;
+  }
+
   render();
   maybeTriggerCPU();
 }
@@ -532,7 +571,9 @@ function renderStatus() {
     overlayTitle.textContent = winner === 'draw' ? "It's a Draw" : `${winnerLabel} Wins!`;
     overlayText.textContent =
       winner === 'draw'
-        ? 'Both sides lost their last Leader in mutual annihilation.'
+        ? drawReason === 'repetition'
+          ? 'The same position occurred three times - draw by repetition.'
+          : 'Both sides lost their last Leader in mutual annihilation.'
         : 'All opposing Leaders have been eliminated.';
     return;
   }
