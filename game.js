@@ -37,6 +37,11 @@ let captured = { 1: [], 2: [] }; // pieces captured FROM this player (i.e. shown
 let gameMode = 'pvp';
 let cpuDifficulty = 'easy'; // 'easy' (ai.js, greedy) | 'hard' (ai-hard.js, lookahead)
 let turnCount = 1;
+// Tracks how many times each board position (+ whose turn) has occurred, so a
+// repeated position (two deterministic CPUs shuffling the same piece forever)
+// ends the game instead of looping indefinitely. Keyed by snapshotPositionKey().
+let positionHistory = new Map();
+let drawReason = null; // 'repetition' | null (null covers the mutual-annihilation case)
 
 function isCPUControlled(owner) {
   if (gameMode === 'spectator') return true;
@@ -88,6 +93,8 @@ function newGame() {
   winner = null;
   captured = { 1: [], 2: [] };
   turnCount = 1;
+  positionHistory = new Map();
+  drawReason = null;
   pieceLayerEl.innerHTML = '';
   pieceEls.clear();
   skipIndicatorEl.classList.remove('show');
@@ -156,6 +163,20 @@ function countLeaders(owner) {
   return pieces.filter((p) => p.alive && p.owner === owner && p.role === 'leader').length;
 }
 
+// True until either side's first capture. The bots widen their near-tie
+// window during this phase (see OPENING_TIE_EPSILON) so opening play varies
+// from game to game instead of always picking the single top-scored piece
+// from the symmetric starting position.
+function isOpeningPhase() {
+  return captured[1].length === 0 && captured[2].length === 0;
+}
+
+// Smaller than the cost of hanging even the cheapest piece (a squadron, worth
+// 3, penalized at least -0.9 by threatPenalty/search for walking into a
+// capture) - wide enough to bundle several safe, roughly-equal opening moves
+// together, not wide enough to let a real blunder sneak into the random pick.
+const OPENING_TIE_EPSILON = 1.5;
+
 function checkGameOver() {
   const p1 = countLeaders(1);
   const p2 = countLeaders(2);
@@ -167,6 +188,23 @@ function checkGameOver() {
 
 function removeFromBoard(r, c) {
   board[r][c] = null;
+}
+
+// Encodes a board state as a string: id/row/col/promoted for every living
+// piece (piece identity, type, role and owner never change, so the id alone
+// is enough) plus whose turn it is. Two calls produce the same key iff the
+// resulting position is identical - used to detect repeated positions.
+function snapshotPositionKey(pieceList, playerToMove) {
+  const parts = [playerToMove];
+  for (const p of pieceList) {
+    if (!p.alive) continue;
+    parts.push(`${p.id}:${p.row},${p.col},${p.promoted ? 1 : 0}`);
+  }
+  return parts.join('|');
+}
+
+function positionKey() {
+  return snapshotPositionKey(pieces, currentPlayer);
 }
 
 // A unit reaching the opponent's home rank is promoted once, restoring the
@@ -271,16 +309,45 @@ function concludeTurn() {
   if (nextPlayer === 1) turnCount++; // a full round (both players moved) just completed
   currentPlayer = nextPlayer;
   mode = 'idle';
+
+  // If this exact position (same squares, same side to move) has now shown up
+  // a third time, nobody's going to break the cycle on their own - call it a
+  // draw instead of leaving the game to loop forever.
+  const key = positionKey();
+  const seenCount = (positionHistory.get(key) || 0) + 1;
+  positionHistory.set(key, seenCount);
+  if (seenCount >= 3) {
+    mode = 'over';
+    winner = 'draw';
+    drawReason = 'repetition';
+    render();
+    return;
+  }
+
   render();
   maybeTriggerCPU();
 }
 
 // Dispatches to the Easy bot (ai.js) or the Hard bot (ai-hard.js) depending
-// on the selected difficulty.
+// on the selected difficulty. A thrown error here (e.g. from the Hard bot's
+// search) would otherwise leave "CPU is thinking…" on screen forever, since
+// nothing else re-triggers the turn - so fall back to the simpler Easy bot,
+// and failing that, just skip, rather than leave the game stuck.
 function stepCPU() {
   if (mode === 'over' || mode === 'animating' || !isCPUControlled(currentPlayer)) return;
-  if (cpuDifficulty === 'hard') runHardCPUTurnStep();
-  else runCPUTurnStep();
+  try {
+    if (cpuDifficulty === 'hard') runHardCPUTurnStep();
+    else runCPUTurnStep();
+  } catch (err) {
+    console.error('CPU turn failed, retrying with the Easy bot:', err);
+    try {
+      runCPUTurnStep();
+    } catch (err2) {
+      console.error('CPU turn failed again, skipping turn:', err2);
+      if (mode === 'bonus') skipBonusMove();
+      else skipEntireTurn();
+    }
+  }
 }
 
 function maybeTriggerCPU() {
@@ -518,7 +585,9 @@ function renderStatus() {
     overlayTitle.textContent = winner === 'draw' ? "It's a Draw" : `${winnerLabel} Wins!`;
     overlayText.textContent =
       winner === 'draw'
-        ? 'Both sides lost their last Leader in mutual annihilation.'
+        ? drawReason === 'repetition'
+          ? 'The same position occurred three times - draw by repetition.'
+          : 'Both sides lost their last Leader in mutual annihilation.'
         : 'All opposing Leaders have been eliminated.';
     return;
   }

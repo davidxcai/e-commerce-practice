@@ -149,18 +149,11 @@ function pickBestAction(owner) {
   const actions = generateAllActions(owner, pieces, board);
   if (actions.length === 0) return null;
 
-  let bestScore = -Infinity;
-  let bestActions = [];
-  for (const action of actions) {
-    const score = scoreAction(owner, action);
-    if (score > bestScore + 1e-9) {
-      bestScore = score;
-      bestActions = [action];
-    } else if (Math.abs(score - bestScore) < 1e-9) {
-      bestActions.push(action);
-    }
-  }
-  return bestActions[Math.floor(Math.random() * bestActions.length)];
+  const scored = actions.map((action) => ({ action, score: scoreAction(owner, action) }));
+  const bestScore = scored.reduce((m, s) => Math.max(m, s.score), -Infinity);
+  const epsilon = isOpeningPhase() ? OPENING_TIE_EPSILON : 1e-9;
+  const bestActions = scored.filter((s) => bestScore - s.score <= epsilon);
+  return bestActions[Math.floor(Math.random() * bestActions.length)].action;
 }
 
 function pickBestBonusMove(owner) {

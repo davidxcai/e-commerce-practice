@@ -72,7 +72,9 @@ function withPreferredFirst(actions, preferred) {
 
 function checkAbort(state) {
   state.nodes++;
-  if (!state.aborted && (state.nodes & 511) === 0 && Date.now() > state.deadline) {
+  // Checked every 63 nodes rather than less often so a slow device can't
+  // blow through the time budget by much before this notices.
+  if (!state.aborted && (state.nodes & 63) === 0 && Date.now() > state.deadline) {
     state.aborted = true;
   }
   return state.aborted;
@@ -89,11 +91,25 @@ function evalChildAction(snapshot, owner, action, depth, alpha, beta, state) {
   return -negamax(child, opponentOf(owner), depth - 1, -beta, -alpha, state);
 }
 
+// Material alone is flat across every quiet (non-capturing) move once the
+// armies make contact, which left alpha-beta deterministically picking
+// whichever action happened to sort first - the root cause of two identical
+// deterministic bots shuffling the same piece back and forth forever. Mobility
+// gives quiet positions a real gradient to climb instead of an arbitrary tie.
+const MOBILITY_WEIGHT = 0.05;
+
+function evaluateSnapshotHard(snapshot, forOwner) {
+  const enemyOwner = opponentOf(forOwner);
+  const myMoves = generateAllActions(forOwner, snapshot.pieces, snapshot.board).length;
+  const theirMoves = generateAllActions(enemyOwner, snapshot.pieces, snapshot.board).length;
+  return evaluateSnapshot(snapshot, forOwner) + (myMoves - theirMoves) * MOBILITY_WEIGHT;
+}
+
 function negamax(snapshot, owner, depth, alpha, beta, state) {
   if (checkAbort(state)) return 0;
   const over = snapshotWinner(snapshot);
   if (over) return terminalScore(over, owner);
-  if (depth <= 0) return evaluateSnapshot(snapshot, owner);
+  if (depth <= 0) return evaluateSnapshotHard(snapshot, owner);
 
   const actions = generateAllActions(owner, snapshot.pieces, snapshot.board);
   if (actions.length === 0) {
@@ -146,6 +162,7 @@ function pickBestActionHard(owner) {
 
   const deadline = Date.now() + HARD_TIME_BUDGET_MS;
   let bestAction = actions[0];
+  let lastCompleteResults = null; // every action's score, from the deepest depth that finished in time
 
   for (let depth = 1; depth <= HARD_MAX_DEPTH; depth++) {
     const state = { nodes: 0, deadline, aborted: false };
@@ -154,10 +171,12 @@ function pickBestActionHard(owner) {
     const beta = Infinity;
     let depthBestAction = null;
     let depthBestScore = -Infinity;
+    const results = [];
 
     for (const action of ordered) {
       const value = evalChildAction(rootSnapshot, owner, action, depth, alpha, beta, state);
       if (state.aborted) break;
+      results.push({ action, score: value });
       if (value > depthBestScore) {
         depthBestScore = value;
         depthBestAction = action;
@@ -167,10 +186,49 @@ function pickBestActionHard(owner) {
 
     if (state.aborted || !depthBestAction) break;
     bestAction = depthBestAction;
+    lastCompleteResults = results;
     if (Date.now() > deadline) break;
   }
 
-  return bestAction;
+  return pickAmongNearBest(owner, lastCompleteResults, bestAction);
+}
+
+// The deepest fully-searched depth almost always leaves several actions tied
+// (or nearly tied) with the best score, especially in quiet positions where
+// material and mobility don't distinguish them. Instead of always taking the
+// first one (deterministic, and prone to shuffling into a repeated position),
+// prefer whichever tied action leads to the position seen least often so far,
+// and break any remaining tie randomly - so the bot doesn't walk an identical
+// path every game and doesn't lock itself into a back-and-forth loop.
+const ROOT_TIE_EPSILON = 0.5; // smaller than any real material/mobility swing
+
+function pickAmongNearBest(owner, results, fallbackAction) {
+  if (!results || results.length === 0) return fallbackAction;
+  // Before either side has captured anything the position is symmetric and
+  // quiet, so widen the window - otherwise the search's tiny, consistent
+  // mobility edge for one piece would make every game open identically.
+  const epsilon = isOpeningPhase() ? OPENING_TIE_EPSILON : ROOT_TIE_EPSILON;
+  const bestScore = results.reduce((m, r) => Math.max(m, r.score), -Infinity);
+  const tied = results.filter((r) => bestScore - r.score < epsilon);
+  if (tied.length === 1) return tied[0].action;
+
+  const nextPlayer = opponentOf(owner);
+  const withSeenCount = tied.map((r) => ({
+    action: r.action,
+    seen: positionHistory.get(resultingPositionKey(owner, r.action, nextPlayer)) || 0,
+  }));
+  const minSeen = Math.min(...withSeenCount.map((r) => r.seen));
+  const freshest = withSeenCount.filter((r) => r.seen === minSeen);
+  return freshest[Math.floor(Math.random() * freshest.length)].action;
+}
+
+// Keys the position `action` would land in (pre-bonus - a repetition loop
+// never involves a bonus move, so keying the resting square after the primary
+// move/swap is enough to steer away from it).
+function resultingPositionKey(owner, action, nextPlayer) {
+  const snap = cloneSnapshot(pieces);
+  const result = applyActionSimHard(snap, action);
+  return snapshotPositionKey(snap.pieces, result.bonus ? owner : nextPlayer);
 }
 
 function pickBestBonusMoveHard(owner) {
