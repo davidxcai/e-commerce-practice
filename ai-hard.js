@@ -9,7 +9,13 @@
 // snapshot/simulation helpers from ai.js - it never touches the real game
 // state while searching.
 
-const HARD_MAX_DEPTH = 4; // turns of lookahead (each turn = one player's full move, bonus included)
+// Turns of lookahead (each turn = one player's full move, bonus included).
+// Iterative deepening + the time budget below bound how deep a search
+// actually gets in a busy midgame, so raising this cap is free there - it
+// only matters once few pieces remain and the branching factor drops, which
+// is exactly when a deeper search is needed to find a forced capture
+// sequence instead of just leaning on the heuristics in evaluateSnapshotHard.
+const HARD_MAX_DEPTH = 8;
 const HARD_TIME_BUDGET_MS = 1200;
 const HARD_CPU_MOVE_DELAY_MS = 300;
 const WIN_SCORE = 1e6;
@@ -93,16 +99,72 @@ function evalChildAction(snapshot, owner, action, depth, alpha, beta, state) {
 
 // Material alone is flat across every quiet (non-capturing) move once the
 // armies make contact, which left alpha-beta deterministically picking
-// whichever action happened to sort first - the root cause of two identical
-// deterministic bots shuffling the same piece back and forth forever. Mobility
-// gives quiet positions a real gradient to climb instead of an arbitrary tie.
-const MOBILITY_WEIGHT = 0.05;
+// whichever action happened to sort first. An earlier fix added a "maximize
+// total army mobility" term to break that flatness, but it backfired: closing
+// in on a cornered enemy Leader shrinks YOUR mobility faster than theirs
+// (fewer empty squares near a board edge / a clump of pieces), so it actively
+// rewarded hanging back in open space instead of hunting - which is exactly
+// why the bot kept re-shuffling instead of finishing games off. These terms
+// replace it with the real priorities in order: material already ranks
+// Leaders far above squadrons (see PIECE_VALUE) and still dominates; on top
+// of that, reward cornering the enemy Leader specifically, converging our
+// pieces on it, and advancing promotions - small enough to never outweigh a
+// real trade, large enough to turn "no legal reason to move" into "move
+// toward finishing the game."
+const ENEMY_LEADER_MOBILITY_WEIGHT = 0.2; // fewer escape squares for their Leader = closer to a trap
+const OWN_LEADER_MOBILITY_WEIGHT = 0.08; // keep some safety margin for ours
+const LEADER_PRESSURE_WEIGHT = 0.03; // reward closing the distance from our pieces to their Leader
+const PROMOTION_WEIGHT = 0.05; // reward advancing toward (and reaching) promotion
+
+function leaderMobility(snapshot, owner) {
+  let total = 0;
+  for (const p of snapshot.pieces) {
+    if (p.alive && p.owner === owner && p.role === 'leader') total += getLegalMoves(p, snapshot.board).length;
+  }
+  return total;
+}
+
+// Sum, over every one of forOwner's living pieces, of how close it is to the
+// nearest enemy Leader (0..SIZE-1, higher = closer) - rises as the army
+// converges on it instead of drifting in open space.
+function leaderPressure(snapshot, forOwner) {
+  const enemyOwner = opponentOf(forOwner);
+  const enemyLeaders = snapshot.pieces.filter((p) => p.alive && p.owner === enemyOwner && p.role === 'leader');
+  if (enemyLeaders.length === 0) return 0;
+  let pressure = 0;
+  for (const p of snapshot.pieces) {
+    if (!p.alive || p.owner !== forOwner) continue;
+    let minDist = Infinity;
+    for (const leader of enemyLeaders) {
+      const dist = Math.max(Math.abs(p.row - leader.row), Math.abs(p.col - leader.col));
+      if (dist < minDist) minDist = dist;
+    }
+    pressure += SIZE - 1 - minDist;
+  }
+  return pressure;
+}
+
+// Sum, over owner's not-yet-promoted living pieces, of how close each is to
+// its promotion rank (0..SIZE-1); an already-promoted piece counts as having
+// arrived, so promoting always scores at least as well as approaching it.
+function promotionProgress(snapshot, owner) {
+  const farRank = owner === 1 ? 0 : SIZE - 1;
+  let score = 0;
+  for (const p of snapshot.pieces) {
+    if (!p.alive || p.owner !== owner) continue;
+    score += p.promoted ? SIZE - 1 : SIZE - 1 - Math.abs(p.row - farRank);
+  }
+  return score;
+}
 
 function evaluateSnapshotHard(snapshot, forOwner) {
   const enemyOwner = opponentOf(forOwner);
-  const myMoves = generateAllActions(forOwner, snapshot.pieces, snapshot.board).length;
-  const theirMoves = generateAllActions(enemyOwner, snapshot.pieces, snapshot.board).length;
-  return evaluateSnapshot(snapshot, forOwner) + (myMoves - theirMoves) * MOBILITY_WEIGHT;
+  let score = evaluateSnapshot(snapshot, forOwner);
+  score += leaderMobility(snapshot, forOwner) * OWN_LEADER_MOBILITY_WEIGHT;
+  score -= leaderMobility(snapshot, enemyOwner) * ENEMY_LEADER_MOBILITY_WEIGHT;
+  score += (leaderPressure(snapshot, forOwner) - leaderPressure(snapshot, enemyOwner)) * LEADER_PRESSURE_WEIGHT;
+  score += (promotionProgress(snapshot, forOwner) - promotionProgress(snapshot, enemyOwner)) * PROMOTION_WEIGHT;
+  return score;
 }
 
 function negamax(snapshot, owner, depth, alpha, beta, state) {
