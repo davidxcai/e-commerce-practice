@@ -204,8 +204,12 @@ const ROOT_TIE_EPSILON = 0.5; // smaller than any real material/mobility swing
 
 function pickAmongNearBest(owner, results, fallbackAction) {
   if (!results || results.length === 0) return fallbackAction;
+  // Before either side has captured anything the position is symmetric and
+  // quiet, so widen the window - otherwise the search's tiny, consistent
+  // mobility edge for one piece would make every game open identically.
+  const epsilon = isOpeningPhase() ? OPENING_TIE_EPSILON : ROOT_TIE_EPSILON;
   const bestScore = results.reduce((m, r) => Math.max(m, r.score), -Infinity);
-  const tied = results.filter((r) => bestScore - r.score < ROOT_TIE_EPSILON);
+  const tied = results.filter((r) => bestScore - r.score < epsilon);
   if (tied.length === 1) return tied[0].action;
 
   const nextPlayer = opponentOf(owner);

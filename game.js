@@ -163,6 +163,20 @@ function countLeaders(owner) {
   return pieces.filter((p) => p.alive && p.owner === owner && p.role === 'leader').length;
 }
 
+// True until either side's first capture. The bots widen their near-tie
+// window during this phase (see OPENING_TIE_EPSILON) so opening play varies
+// from game to game instead of always picking the single top-scored piece
+// from the symmetric starting position.
+function isOpeningPhase() {
+  return captured[1].length === 0 && captured[2].length === 0;
+}
+
+// Smaller than the cost of hanging even the cheapest piece (a squadron, worth
+// 3, penalized at least -0.9 by threatPenalty/search for walking into a
+// capture) - wide enough to bundle several safe, roughly-equal opening moves
+// together, not wide enough to let a real blunder sneak into the random pick.
+const OPENING_TIE_EPSILON = 1.5;
+
 function checkGameOver() {
   const p1 = countLeaders(1);
   const p2 = countLeaders(2);
